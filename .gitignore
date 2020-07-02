@@ -128,3 +128,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Bienendaten
+Data/
+
+#TRACLUS Implementation from  apolcyn/traclus_impl (github)
+traclus_impl/
