@@ -1,7 +1,7 @@
 import json
-import geopandas as gpd
 import pandas as pd
-
+import dask.dataframe as dd
+from shapely.geometry import LineString
 
 '''
 def create_trajectory_list(trajectory):
@@ -22,31 +22,26 @@ def create_point(point: tuple) -> dict:
 
 
 def create_trajectory_list(trajectory):
-    geo_trajectory = gpd.GeoSeries(trajectory.coords)
+    trajectory = pd.Series(LineString(trajectory).coords)
 
-    #print('trajectory TYPE | ', type(trajectory))
-    #print('trajectory | ', trajectory)
+    # print('trajectory TYPE | ', type(trajectory))
+    # print('trajectory | ', trajectory)
 
-    #print('geo_trajectory TYPE | ', type(geo_trajectory))
-    #print('geo_trajectory | ', geo_trajectory)
+    # print('geo_trajectory TYPE | ', type(geo_trajectory))
+    # print('geo_trajectory | ', geo_trajectory)
 
-    trajectory_list = geo_trajectory.apply(lambda point: create_point(point))
+    trajectory = trajectory.apply(lambda point: create_point(point))
 
-    #print('trajectory_list TYPE | ', type(trajectory_list))
-    #print('trajectory_list | ', trajectory_list)
-    return trajectory_list.to_list()
+    # print('trajectory_list TYPE | ', type(trajectory_list))
+    # print('trajectory_list | ', trajectory_list)
+    return trajectory.to_list()
 
 
-def create_json(trajectories: gpd.GeoDataFrame, epsilon=0.00016, min_neighbors=2,
+def create_json(trajectories: dd.DataFrame, epsilon=0.00016, min_neighbors=2,
                 min_num_trajectories_in_cluster=3, min_vertical_lines=2,
                 min_prev_dist=0.0002):
-    header = {
-        "epsilon": epsilon,
-        "min_neighbors": min_neighbors,
-        "min_num_trajectories_in_cluster": min_num_trajectories_in_cluster,
-        "min_vertical_lines": min_vertical_lines,
-        "min_prev_dist": min_prev_dist
-    }
+
+    header = create_head(epsilon, min_neighbors, min_num_trajectories_in_cluster, min_prev_dist, min_vertical_lines)
 
     '''
     import dask.dataframe as dd
@@ -56,21 +51,62 @@ def create_json(trajectories: gpd.GeoDataFrame, epsilon=0.00016, min_neighbors=2
     trajectories_list = trajectories_dd.apply(lambda trajectory: create_trajectory_list(trajectory))
     '''
 
-    trajectories_list = trajectories.geometry.progress_apply(lambda trajectory: create_trajectory_list(trajectory))
+    # print('trajectories.geometry TYPE| ', type(trajectories.geometry))
 
-    print('trajectories_list TYPE| ', type(trajectories_list))
-    print('trajectories_list SHAPE| ', trajectories_list.shape)
-    print('trajectories_list | ', trajectories_list.head())
+    trajectories_temp = trajectories.map_partitions(
+        lambda trajectory: create_trajectory_list(trajectory))
 
-    trajectories_json = trajectories_list.to_json(orient='records')
+    import sys
+    print('Size trajectories_temp | ', sys.getsizeof(trajectories_temp))
+    print('trajectories_temp | ', trajectories_temp.head())
 
-    trajectories_tmp = json.loads(trajectories_json)
+    '''
+    trajectories_json = []
+    for t in trajectories['geometry_json']:
+        trajectories_tmp = json.loads(t)
+        trajectories_json.append(trajectories_tmp)
+    '''
 
-    header.update({'trajectories': trajectories_tmp})
+    trajectories_json = trajectories_temp.to_json(orient='records')
+    print('trajectories_json | ', trajectories_json)
+    print('Size trajectories_json | ', sys.getsizeof(trajectories_json))
+
+    header.update({'trajectories': trajectories_json})
+    print('header.update() complete')
 
     traclus_json = json.dumps(header, indent=4)
+    print('traclus_json complete | ', type(traclus_json))
+    
+    traclus_json = traclus_json.replace('\\', '')
 
     return traclus_json
+
+    '''
+    trajectories_json = trajectories['geometry'].to_json(orient='records')
+    print('trajectories_json complete')
+
+    trajectories_tmp = json.loads(trajectories_json)
+    print('trajectories_tmp complete')
+
+    header.update({'trajectories': trajectories_tmp})
+    print('header.update() complete')
+
+    traclus_json = json.dumps(header, indent=4)
+    print('traclus_json complete')
+
+    return traclus_json
+    '''
+
+
+def create_head(epsilon, min_neighbors, min_num_trajectories_in_cluster, min_prev_dist, min_vertical_lines):
+    header = {
+        "epsilon": epsilon,
+        "min_neighbors": min_neighbors,
+        "min_num_trajectories_in_cluster": min_num_trajectories_in_cluster,
+        "min_vertical_lines": min_vertical_lines,
+        "min_prev_dist": min_prev_dist
+    }
+    return header
 
 
 def write_to_file(traclus_json, filename="traclus_trajectories.json"):
